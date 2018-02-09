@@ -26,8 +26,14 @@ export class AmpScript extends AMP.BaseElement {
 
   /** @override */
   layoutCallback() {
-    return this.fetchText_(this.element.getAttribute('src'))
-        .then(script => this.createWorker_(script));
+    if (this.element.hasAttribute('src')) {
+      return this.fetchText_(this.element.getAttribute('src'))
+          .then(script => this.createWorker_(script));
+    } else {
+      const script =
+          this.win.document.querySelector('script[type="javascript/worker"]');
+      return this.createWorker_(script.textContent);
+    }
   }
 
   /**
@@ -35,7 +41,7 @@ export class AmpScript extends AMP.BaseElement {
    * @private
    */
   createWorker_(script) {
-    // TODO(willchou): Output a second binary in amp-script extension folder instead.
+    // TODO(willchou): Output a second binary in folder instead.
     return this.fetchText_('/extensions/amp-script/0.1/worker.js').then(text => {
       const code = [text, script, '}).call(monkeyScope);'].join('\n');
       const blobUrl = URL.createObjectURL(
