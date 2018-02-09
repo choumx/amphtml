@@ -141,6 +141,7 @@ declareExtension('amp-playbuzz', '0.1', {hasCss: true});
 declareExtension('amp-reach-player', '0.1');
 declareExtension('amp-reddit', '0.1');
 declareExtension('amp-riddle-quiz', '0.1');
+declareExtension('amp-script', '0.1');
 declareExtension('amp-share-tracking', '0.1');
 declareExtension('amp-sidebar', '0.1', {hasCss: true});
 declareExtension('amp-soundcloud', '0.1');
