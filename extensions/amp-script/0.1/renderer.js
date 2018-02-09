@@ -55,7 +55,7 @@ export default ({win, worker, root}) => {
   }
 
   EVENTS_TO_PROXY.forEach((e) => {
-    addEventListener(e, proxyEvent, {capture: true, passive: false});
+    root.addEventListener(e, proxyEvent, {capture: true, passive: false});
   });
 
   // Allow mutations up to 1s after user gesture.
