@@ -26,7 +26,7 @@ const Flags = {
  * @param {Worker} opts.worker The WebWorker instance to proxy to.
  */
 export default ({win, worker, root}) => {
-  const EVENTS_TO_PROXY = [
+  const ELEMENT_EVENTS_TO_PROXY = [
     'change',
     'click',
     'focus',
@@ -34,6 +34,8 @@ export default ({win, worker, root}) => {
     'keydown',
     'input',
     'dblclick',
+  ];
+  const WINDOW_EVENTS_TO_PROXY = [
     'hashchange',
   ];
 
@@ -54,8 +56,11 @@ export default ({win, worker, root}) => {
     return NODES.get(nodeOrId.__id);
   }
 
-  EVENTS_TO_PROXY.forEach((e) => {
+  ELEMENT_EVENTS_TO_PROXY.forEach((e) => {
     root.addEventListener(e, proxyEvent, {capture: true, passive: false});
+  });
+  WINDOW_EVENTS_TO_PROXY.forEach((e) => {
+    addEventListener(e, proxyEvent, {capture: true, passive: false});
   });
 
   // Allow mutations up to 1s after user gesture.
@@ -98,14 +103,15 @@ export default ({win, worker, root}) => {
       event.__value = e.target.value;
     }
 
-    // HACK(willchou): This is only needed for TodoMvcApp. For the real deal,
-    // need to implement the page-side preventDefault() opt-in (a la Wiz).
-    const enterKeyDown = (e.type == 'keydown' && e.keyCode == 13);
-    const todoItemToggled = (e.type == 'change' && e.target.type == 'checkbox');
-    if (enterKeyDown || todoItemToggled) {
-      e.preventDefault();
-      console.log('Page prevented default for:', e);
-    }
+    // HACK(willchou): Preact TodoMVC calls preventDefault() on these events.
+    // However, I'm not sure its omission impacts app functionality so commented
+    // out for now.
+    // const enterKeyDown = (e.type == 'keydown' && e.keyCode == 13);
+    // const todoItemToggled = (e.type == 'change' && e.target.type == 'checkbox');
+    // if (enterKeyDown || todoItemToggled) {
+    //   e.preventDefault();
+    //   console.log('Page prevented default for:', e);
+    // }
 
     // Copy properties from `e` to proxied `event`.
     for (let i in e) {
