@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import * as DOMPurify from 'dompurify/dist/purify.cjs';
+
 // Chrome doesn't support ES6 modules in workers yet, so we dupe the flags
 // on main page (renderer.js) and worker (undom.js).
 const Flags = {
@@ -23,7 +25,7 @@ const Flags = {
 
 /**
  * Sets up a bidirectional DOM Mutation+Event proxy to a Workerized app.
- * @param {Worker} opts.worker The WebWorker instance to proxy to.
+ * @param {{win, worker, root}} args The WebWorker instance to proxy to.
  */
 export default ({win, worker, root}) => {
   const ELEMENT_EVENTS_TO_PROXY = [
@@ -41,7 +43,10 @@ export default ({win, worker, root}) => {
 
   const NODES = new Map();
 
-  /** Returns the real DOM Element corresponding to a serialized Element object. */
+  /**
+   * Returns the real DOM Element corresponding to a serialized Element object.
+   * @param {*} nodeOrId
+   */
   function getNode(nodeOrId) {
     if (!nodeOrId) {
       return null;
@@ -56,10 +61,10 @@ export default ({win, worker, root}) => {
     return NODES.get(nodeOrId.__id);
   }
 
-  ELEMENT_EVENTS_TO_PROXY.forEach((e) => {
+  ELEMENT_EVENTS_TO_PROXY.forEach(e => {
     root.addEventListener(e, proxyEvent, {capture: true, passive: false});
   });
-  WINDOW_EVENTS_TO_PROXY.forEach((e) => {
+  WINDOW_EVENTS_TO_PROXY.forEach(e => {
     addEventListener(e, proxyEvent, {capture: true, passive: false});
   });
 
@@ -78,13 +83,19 @@ export default ({win, worker, root}) => {
     worker.postMessage(message);
   }
 
-  /** Derives {pageX,pageY} coordinates from a mouse or touch event. */
+  /**
+   * Derives {pageX,pageY} coordinates from a mouse or touch event.
+   * @param {!Event} e
+   */
   function getTouch(e) {
     let t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]) || e;
     return t && {pageX: t.pageX, pageY: t.pageY};
   }
 
-  /** Forward a DOM Event into the Worker as a message */
+  /**
+   * Forward a DOM Event into the Worker as a message.
+   * @param {!Event} e
+   */
   function proxyEvent(e) {
     timeOfLastUserGesture = Date.now();
 
@@ -130,9 +141,10 @@ export default ({win, worker, root}) => {
     if (e.type === 'touchstart') {
       touchStart = getTouch(e);
     } else if (e.type === 'touchend' && touchStart) {
-      let touchEnd = getTouch(e);
+      const touchEnd = getTouch(e);
       if (touchEnd) {
-        let dist = Math.sqrt(Math.pow(touchEnd.pageX - touchStart.pageX, 2) + Math.pow(touchEnd.pageY - touchStart.pageY, 2));
+        const dist = Math.sqrt(Math.pow(touchEnd.pageX - touchStart.pageX, 2)
+            + Math.pow(touchEnd.pageY - touchStart.pageY, 2));
         if (dist < 10) {
           event.type = 'click';
           postToWorker({type: 'event', event});
@@ -141,12 +153,13 @@ export default ({win, worker, root}) => {
     }
   }
 
-
-  /** Create a real DOM Node from a skeleton Object (`{ nodeType, nodeName, attributes, children, data }`)
+  /**
+   * Create a real DOM Node from a skeleton Object (`{ nodeType, nodeName, attributes, children, data }`)
   * @example <caption>Text node</caption>
   *   createNode({ nodeType:3, data:'foo' })
   * @example <caption>Element node</caption>
   *   createNode({ nodeType:1, nodeName:'div', attributes:[{ name:'a', value:'b' }], childNodes:[ ... ] })
+   * @param {*} skeleton
    */
   function createNode(skeleton) {
     let node;
@@ -183,7 +196,7 @@ export default ({win, worker, root}) => {
   /** Apply MutationRecord mutations, keyed by type. */
   const MUTATIONS = {
     childList({target, removedNodes, addedNodes, previousSibling, nextSibling}) {
-      let parent = getNode(target);
+      const parent = getNode(target);
       if (removedNodes) {
         for (let i = removedNodes.length; i--; ) {
           parent.removeChild(getNode(removedNodes[i]));
@@ -215,15 +228,19 @@ export default ({win, worker, root}) => {
 
   let mutationTimer;
   // stores pending DOM changes (MutationRecord objects)
-  let MUTATION_QUEUE = [];
+  const MUTATION_QUEUE = [];
 
   const windowSizeCache = {};
-  // Check if an Element is at least partially visible
+  /**
+   * Check if an Element is at least partially visible
+   * @param {*} el
+   * @param {*} cache
+   */
   function isElementInViewport(el, cache = windowSizeCache) {
     if (el.nodeType === 3) {
       el = el.parentNode;
     }
-    let bbox = el.getBoundingClientRect();
+    const bbox = el.getBoundingClientRect();
     return (
       bbox.bottom >= 0 &&
       bbox.right >= 0 &&
@@ -232,7 +249,10 @@ export default ({win, worker, root}) => {
     );
   }
 
-  // Attempt to flush & process as many MutationRecords as possible from the queue
+  /**
+   * Attempt to flush & process as many MutationRecords as possible from the queue.
+   * @param {*} deadline
+   */
   function processMutations(deadline) {
     clearTimeout(mutationTimer);
 
@@ -242,8 +262,8 @@ export default ({win, worker, root}) => {
 
     for (let i = 0; i < MUTATION_QUEUE.length; i++) {
       if (isDeadline
-          ? deadline.timeRemaining() <= 0
-          : (Date.now() - start) > 1) {
+        ? deadline.timeRemaining() <= 0
+        : (Date.now() - start) > 1) {
         timedOut = true;
         break;
       }
@@ -268,17 +288,30 @@ export default ({win, worker, root}) => {
       MUTATIONS[mutation.type](mutation);
     }
 
+    const s = window.performance.now();
+    const aot = root.querySelector('div');
+    const sanitized = DOMPurify.sanitize(aot, {'RETURN_DOM': true});
+    while (root.firstChild) {
+      root.removeChild(root.firstChild);
+    }
+    root.appendChild(sanitized.firstChild);
+    console.log('Sanitize everything: ', (window.performance.now() - s));
+
     if (timedOut && MUTATION_QUEUE.length > 0) {
       processMutationsSoon();
     }
   }
 
+  /** */
   function processMutationsSoon() {
     clearTimeout(mutationTimer);
     mutationTimer = setTimeout(processMutations, 100);
     requestIdleCallback(processMutations);
   }
 
+  /**
+   * @param {*} mutation
+   */
   function enqueueMutation(mutation) {
     let merged = false;
 
@@ -344,42 +377,6 @@ export default ({win, worker, root}) => {
   const aotRoot = win.document.querySelector('[amp-aot]');
   const metrics = win.document.querySelector('#metrics');
 
-  function repaintDirty(skeleton) {
-    if (skeleton.dirty) {
-      // TODO(willchou): Support repainting non-text nodes.
-      if (skeleton.nodeType == Node.TEXT_NODE) {
-        getNode(skeleton).nodeValue = skeleton.data;
-      }
-      skeleton.dirty = false;
-    }
-    skeleton.childNodes.forEach(child => {
-      repaintDirty(child);
-    });
-  }
-
-  function deserializeDom() {
-    let domString = '';
-    for (let i = 0, l = sharedArray.length; i < l; i++) {
-      const b = Atomics.load(sharedArray, i);
-      if (b > 0) {
-        const c = String.fromCharCode(b);
-        domString += c;
-      } else {
-        break;
-      }
-    }
-    return JSON.parse(domString);
-  }
-
-  let buffer = null;
-  let sharedArray = null;
-  if (Flags.USE_SHARED_ARRAY_BUFFER) {
-    buffer = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT * 1000);
-    sharedArray = new Uint16Array(buffer);
-  }
-
-  let domSkeleton = null;
-
   worker.onmessage = ({data}) => {
     if (metrics) {
       const latency = window.performance.now() - data.timestamp;
@@ -389,20 +386,6 @@ export default ({win, worker, root}) => {
     console.info(`Received "${data.type}" from worker:`, data);
 
     switch (data.type) {
-      case 'init-render':
-        console.assert(Flags.USE_SHARED_ARRAY_BUFFER);
-        domSkeleton = deserializeDom();
-        console.assert(domSkeleton.nodeName == 'BODY');
-        const node = createNode(domSkeleton);
-        root.appendChild(node);
-        break;
-
-      case 'dom-update':
-        console.assert(domSkeleton);
-        domSkeleton = deserializeDom();
-        repaintDirty(domSkeleton);
-        break;
-
       case 'mutate':
         const now = Date.now();
 
@@ -432,6 +415,5 @@ export default ({win, worker, root}) => {
   postToWorker({
     type: 'init',
     location: location.href,
-    buffer,
   });
 };
