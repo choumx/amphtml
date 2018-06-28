@@ -154,14 +154,10 @@ export default ({win, worker, root}) => {
   }
 
   /**
-   * Create a real DOM Node from a skeleton Object (`{ nodeType, nodeName, attributes, children, data }`)
-  * @example <caption>Text node</caption>
-  *   createNode({ nodeType:3, data:'foo' })
-  * @example <caption>Element node</caption>
-  *   createNode({ nodeType:1, nodeName:'div', attributes:[{ name:'a', value:'b' }], childNodes:[ ... ] })
+   * Create a real DOM Node from a skeleton Object (`{ nodeType, nodeName, attributes, children, data }`).
    * @param {*} skeleton
    */
-  function createNode(skeleton) {
+  function createNode(skeleton, sanitize = true) {
     let node;
     if (skeleton.nodeType === Node.TEXT_NODE) {
       node = win.document.createTextNode(skeleton.data);
@@ -170,10 +166,11 @@ export default ({win, worker, root}) => {
       if (skeleton.className) {
         node.className = skeleton.className;
       }
-      if (skeleton.style) {
-        for (let i in skeleton.style) {
-          if (skeleton.style.hasOwnProperty(i)) {
-            node.style[i] = skeleton.style[i];
+      const styles = skeleton.style; // eslint-disable-line
+      if (styles) {
+        for (const s in styles) {
+          if (styles.hasOwnProperty(s)) {
+            node.style[i] = styles[s]; // eslint-disable-line
           }
         }
       }
@@ -183,9 +180,15 @@ export default ({win, worker, root}) => {
           node.setAttribute(a.name, a.value);
         }
       }
+      if (sanitize) {
+        // RETURN_DOM returns sanitized node in a <body> element.
+        const sanitized = DOMPurify.sanitize(node, {'RETURN_DOM': true});
+        node = sanitized.firstChild;
+      }
       if (skeleton.childNodes) {
         for (let i = 0; i < skeleton.childNodes.length; i++) {
-          node.appendChild(createNode(skeleton.childNodes[i]));
+          const child = createNode(skeleton.childNodes[i], sanitize);
+          node.appendChild(child);
         }
       }
     }
@@ -277,7 +280,7 @@ export default ({win, worker, root}) => {
 
       // if the element is offscreen, skip any text or attribute changes:
       if (m.type === 'characterData' || m.type === 'attributes') {
-        let target = getNode(m.target);
+        const target = getNode(m.target);
         if (target && !isElementInViewport(target)) {
           continue;
         }
@@ -288,14 +291,21 @@ export default ({win, worker, root}) => {
       MUTATIONS[mutation.type](mutation);
     }
 
-    const s = window.performance.now();
-    const aot = root.querySelector('div');
-    const sanitized = DOMPurify.sanitize(aot, {'RETURN_DOM': true});
-    while (root.firstChild) {
-      root.removeChild(root.firstChild);
-    }
-    root.appendChild(sanitized.firstChild);
-    console.log('Sanitize everything: ', (window.performance.now() - s));
+    // const s = window.performance.now();
+    // const aot = root.querySelector('div');
+    // const sanitized = DOMPurify.sanitize(aot, {
+    //   'RETURN_DOM': true,
+    //   'USE_PROFILES': {
+    //     'html': true,
+    //     'svg': true,
+    //     'svgFilters': true,
+    //   },
+    // });
+    // while (root.firstChild) {
+    //   root.removeChild(root.firstChild);
+    // }
+    // root.appendChild(sanitized.firstChild);
+    // console.log('Sanitize everything: ', (window.performance.now() - s));
 
     if (timedOut && MUTATION_QUEUE.length > 0) {
       processMutationsSoon();
