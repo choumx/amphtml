@@ -153,6 +153,9 @@ export default ({win, worker, root}) => {
     }
   }
 
+  const SANITIZE_IN_PLACE = true;
+  let latency = 0;
+
   /**
    * Create a real DOM Node from a skeleton Object (`{ nodeType, nodeName, attributes, children, data }`).
    * @param {*} skeleton
@@ -180,17 +183,26 @@ export default ({win, worker, root}) => {
           node.setAttribute(a.name, a.value);
         }
       }
-      if (sanitize) {
-        // RETURN_DOM returns sanitized node in a <body> element.
+      if (sanitize && !SANITIZE_IN_PLACE) {
+        const start = performance.now();
         const sanitized = DOMPurify.sanitize(node, {'RETURN_DOM': true});
+        // RETURN_DOM returns sanitized node in a <body> element.
         node = sanitized.firstChild;
+        latency += (performance.now() - start);
       }
       if (skeleton.childNodes) {
         for (let i = 0; i < skeleton.childNodes.length; i++) {
-          const child = createNode(skeleton.childNodes[i], sanitize);
+          const child = createNode(skeleton.childNodes[i],
+              /* sanitize */ !SANITIZE_IN_PLACE);
           node.appendChild(child);
         }
       }
+    }
+    if (sanitize && SANITIZE_IN_PLACE) {
+      const start = performance.now();
+      DOMPurify.sanitize(node, {'RETURN_DOM': true, 'IN_PLACE': true});
+      console.info('Sanitizing:', {tag: node.nodeName});
+      latency += performance.now() - start;
     }
     bindNodeToSkeletonId(node, skeleton.__id);
     return node;
@@ -216,9 +228,14 @@ export default ({win, worker, root}) => {
       }
     },
     attributes({target, attributeName, value, oldValue}) {
-      getNode(target).setAttribute(attributeName, value);
+      const node = getNode(target);
+      node.setAttribute(attributeName, value);
+      const start = performance.now();
+      DOMPurify.sanitize(node, {'RETURN_DOM': true, 'IN_PLACE': true});
+      console.info('Sanitizing:', {tag: node.nodeName, attr: attributeName, value, latency: performance.now() - start});
     },
     characterData({target, value, oldValue}) {
+      // Sanitization not necessary for `nodeValue`.
       getNode(target).nodeValue = value;
     },
     // Non-standard MutationRecord for property changes.
@@ -226,6 +243,9 @@ export default ({win, worker, root}) => {
       const node = getNode(target);
       console.assert(node);
       node[propertyName] = value;
+      const start = performance.now();
+      DOMPurify.sanitize(node, {'RETURN_DOM': true, 'IN_PLACE': true});
+      console.info('Sanitizing:', {tag: node.nodeName, prop: propertyName, value, latency: performance.now() - start});
     },
   };
 
@@ -263,6 +283,8 @@ export default ({win, worker, root}) => {
     const isDeadline = deadline && deadline.timeRemaining;
     let timedOut = false;
 
+    latency = 0; // Reset sanitization latency.
+
     for (let i = 0; i < MUTATION_QUEUE.length; i++) {
       if (isDeadline
         ? deadline.timeRemaining() <= 0
@@ -291,21 +313,9 @@ export default ({win, worker, root}) => {
       MUTATIONS[mutation.type](mutation);
     }
 
-    // const s = window.performance.now();
-    // const aot = root.querySelector('div');
-    // const sanitized = DOMPurify.sanitize(aot, {
-    //   'RETURN_DOM': true,
-    //   'USE_PROFILES': {
-    //     'html': true,
-    //     'svg': true,
-    //     'svgFilters': true,
-    //   },
-    // });
-    // while (root.firstChild) {
-    //   root.removeChild(root.firstChild);
-    // }
-    // root.appendChild(sanitized.firstChild);
-    // console.log('Sanitize everything: ', (window.performance.now() - s));
+    if (latency > 0) {
+      console.log({latency});
+    }
 
     if (timedOut && MUTATION_QUEUE.length > 0) {
       processMutationsSoon();
