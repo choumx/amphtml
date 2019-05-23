@@ -25,7 +25,6 @@ const {
   printNobuildHelp,
 } = require('./helpers');
 const {buildExtensions} = require('./extension-helpers');
-const {clean} = require('./clean');
 const {compileCss} = require('./css');
 const {createCtrlcHandler, exitCtrlcHandler} = require('../ctrlcHandler');
 const {maybeUpdatePackages} = require('./update-packages');
@@ -60,7 +59,6 @@ async function build() {
 async function performBuild(watch) {
   process.env.NODE_ENV = 'development';
   printNobuildHelp();
-  await clean();
   printConfigHelp(watch ? 'gulp watch' : 'gulp build');
   parseExtensionFlags();
   return compileCss(watch).then(() => {
