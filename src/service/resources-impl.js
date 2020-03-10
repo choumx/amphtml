@@ -367,14 +367,13 @@ export class ResourcesImpl {
         return;
       }
 
-      // Force all intersecting, non-zero-sized, non-owned elements to be built.
+      // Force all intersecting, non-zero-sized (including owned) elements to be built.
       // E.g. ensures that all in-viewport elements are built in prerender mode.
       if (
         !r.isBuilt() &&
         !r.isBuilding() &&
         isIntersecting &&
-        r.isDisplayed(clientRect) &&
-        !r.hasOwner()
+        r.isDisplayed(clientRect)
       ) {
         // TODO(willchou): Can this cause scroll jank since we no longer wait
         // for scrolling to stop?
@@ -385,6 +384,12 @@ export class ResourcesImpl {
           /* ignoreQuota */ true
         );
         dev().fine(TAG_, 'force build:', r.debugid);
+      }
+
+      // Skip everything after build (measure/unload/in-viewport/layout) for
+      // owned elements.
+      if (r.hasOwner()) {
+        return;
       }
 
       // TODO(willchou): Risk of long task due to long microtask queue?
@@ -404,10 +409,6 @@ export class ResourcesImpl {
         }
         if (!isDisplayed) {
           toUnload.push(r);
-          return;
-        }
-
-        if (r.hasOwner()) {
           return;
         }
 
