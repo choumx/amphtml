@@ -674,7 +674,7 @@ export class ResourcesImpl {
       return null;
     }
     this.buildAttemptsCount_++;
-    // With IntersectionObserver, no need to schedule measurements after build
+    // With IntersectionObserver, no need to schedule passes after build
     // since these are handled in the initial intersection callback.
     if (!schedulePass || this.oneViewportObserver_) {
       return promise;
